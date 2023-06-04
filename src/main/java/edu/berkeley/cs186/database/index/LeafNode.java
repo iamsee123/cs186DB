@@ -147,16 +147,16 @@ class LeafNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        // according TestLeafNode.testGetL() just simply return this
+        return this;
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
         // TODO(proj2): implement
-
-        return null;
+        // since we only have rightSibling page thus the leftmostLeaf is ourself
+        return this;
     }
 
     // See BPlusNode.put.
@@ -164,7 +164,52 @@ class LeafNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
 
-        return Optional.empty();
+        // duplicatePut should raise exception
+        if (keys.contains(key)){
+            throw new BPlusTreeException("Already have key in tree!");
+        }
+
+        // get bPlusTree order as d
+        int d = this.metadata.getOrder();
+
+        // add new key & rid into lists
+        int index = binarySearch(key);
+        keys.add(index,key);
+        rids.add(index,rid);
+
+        // case1 does not cause overflow
+        if (keys.size()<=2*d){
+            sync();
+            return Optional.empty();
+        }
+
+        // case2 cause overflow
+        int mid = keys.size()/2;
+        List<DataBox> leftKeys = keys.subList(0,mid);
+        List<RecordId> leftRids = rids.subList(0,mid);
+        List<DataBox> rightKeys = keys.subList(mid,keys.size());
+        List<RecordId> rightRids = rids.subList(mid,rids.size());
+        LeafNode newNode = new LeafNode(metadata,bufferManager,rightKeys,rightRids,this.rightSibling,treeContext);
+        this.rightSibling = Optional.of(newNode.getPage().getPageNum());
+        keys = leftKeys;
+        rids = leftRids;
+        sync();
+        return Optional.of(new Pair<DataBox, Long>(newNode.getKeys().get(0), newNode.getPage().getPageNum()));
+    }
+
+    // use in put method
+    // for find the correct place to insert new key
+    private int binarySearch(DataBox key){
+        int left = 0,right = keys.size();
+        while(left < right) {
+            int mid = left + ((right - left) >> 1);
+            if (keys.get(mid).compareTo(key) > 0) {
+                right = mid;
+            } else {
+                left = mid+1;
+            }
+        }
+        return left;
     }
 
     // See BPlusNode.bulkLoad.
@@ -173,6 +218,31 @@ class LeafNode extends BPlusNode {
             float fillFactor) {
         // TODO(proj2): implement
 
+        // get bPlusTree order as d
+        int d = this.metadata.getOrder();
+        // cal fillFactorNumber
+        int fillNum = (int)(2*d*fillFactor);
+
+        // while data has next
+        while (data.hasNext()){
+            // get cur data
+            Pair<DataBox, RecordId> curData = data.next();
+
+            if (keys.size() < fillNum){
+                keys.add(curData.getFirst());
+                rids.add(curData.getSecond());
+            }else {
+                List<DataBox> newKeys = new ArrayList<>();
+                List<RecordId> newRids = new ArrayList<>();
+                newKeys.add(curData.getFirst());
+                newRids.add(curData.getSecond());
+                LeafNode newNode = new LeafNode(metadata,bufferManager,newKeys,newRids,this.rightSibling,treeContext);
+                this.rightSibling = Optional.of(newNode.getPage().getPageNum());
+                sync();
+                return Optional.of(new Pair<DataBox, Long>(newNode.getKeys().get(0), newNode.getPage().getPageNum()));
+            }
+        }
+        sync();
         return Optional.empty();
     }
 
@@ -181,6 +251,13 @@ class LeafNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(proj2): implement
 
+        // check whether we have equal key
+        int index = keys.indexOf(key);
+        if (index != -1){
+            keys.remove(index);
+            rids.remove(index);
+        }
+        sync();
         return;
     }
 
@@ -217,7 +294,7 @@ class LeafNode extends BPlusNode {
 
     /** Returns the right sibling of this leaf, if it has one. */
     Optional<LeafNode> getRightSibling() {
-        if (!rightSibling.isPresent()) {
+        if (!rightSibling.isPresent() || rightSibling.get() == -1L) {
             return Optional.empty();
         }
 
@@ -377,7 +454,33 @@ class LeafNode extends BPlusNode {
         // use the constructor that reuses an existing page instead of fetching a
         // brand new one.
 
-        return null;
+        //1. get page from bufferManager
+        Page page = bufferManager.fetchPage(treeContext,pageNum);
+        // get page's buffer
+        Buffer buf = page.getBuffer();
+
+        // deserialize the nodeType
+        byte nodeType = buf.get();
+        // check
+        assert(nodeType == (byte)1);
+
+        //prepare keys and rids
+        List<DataBox> keys = new ArrayList<>();
+        List<RecordId> rids = new ArrayList<>();
+
+        // deserialize the page id (8 bytes) of our right sibling
+        long rightSibling = buf.getLong();
+
+        // deserialize the number of pairs
+        int sizeOfPairs = buf.getInt();
+
+        // deserialize keys and rids
+        for (int i = 0; i < sizeOfPairs; i++) {
+            keys.add(DataBox.fromBytes(buf,metadata.getKeySchema()));
+            rids.add(RecordId.fromBytes(buf));
+        }
+
+        return new LeafNode(metadata,bufferManager,page,keys,rids,Optional.of(rightSibling),treeContext);
     }
 
     // Builtins ////////////////////////////////////////////////////////////////

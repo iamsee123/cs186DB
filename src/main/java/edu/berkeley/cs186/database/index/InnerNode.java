@@ -81,8 +81,13 @@ class InnerNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        // use binary search to find possible leaf node
+        int index = binarySearch(key);
+        BPlusNode node = getChild(index);
+        while (node instanceof InnerNode){
+            node = node.get(key);
+        }
+        return (LeafNode)node;
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -90,16 +95,78 @@ class InnerNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
         // TODO(proj2): implement
+        // the most left children
+        BPlusNode node = getChild(0);
+        while (node instanceof InnerNode){
+            node = ((InnerNode) node).getChild(0);
+        }
 
-        return null;
+        return (LeafNode) node;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
+
         // TODO(proj2): implement
 
-        return Optional.empty();
+        // get bPlusTree order as d
+        int d = this.metadata.getOrder();
+
+        // find correct index to add
+        int index = binarySearch(key);
+
+        // add to childNode
+        BPlusNode child = getChild(index);
+
+        // whether split happen in putting key into leafNode
+        Optional<Pair<DataBox,Long>> splitInfo = child.put(key,rid);
+
+        // if happen split in putting key into leafNode
+        if(splitInfo.isPresent()){
+
+            // add new key & rid into lists
+            keys.add(index,splitInfo.get().getFirst());
+            children.add(index+1,splitInfo.get().getSecond());
+
+            // case1 does not cause overflow
+            if (keys.size()<=2*d){
+                sync();
+                return Optional.empty();
+            }
+
+            // case2 cause overflow
+            int mid = keys.size()/2;
+            List<DataBox> leftKeys = keys.subList(0,mid);
+            List<Long> leftChildren = children.subList(0,mid+1);
+            List<DataBox> rightKeys = keys.subList(mid+1,keys.size());
+            List<Long> rightChildren = children.subList(mid+1,children.size());
+            InnerNode newNode = new InnerNode(metadata,bufferManager,rightKeys,rightChildren,treeContext);
+            DataBox splitKey = keys.get(mid);
+            keys = leftKeys;
+            children = leftChildren;
+            sync();
+            return Optional.of(new Pair<DataBox, Long>(splitKey, newNode.getPage().getPageNum()));
+        }
+        // if do not happen split just return empty val
+        else {
+            return Optional.empty();
+        }
+    }
+
+    // use in put & get method
+    // for find the correct place to insert new key
+    private int binarySearch(DataBox key){
+        int left = 0,right = keys.size();
+        while(left < right) {
+            int mid = left + ((right - left) >> 1);
+            if (keys.get(mid).compareTo(key) > 0) {
+                right = mid;
+            } else {
+                left = mid+1;
+            }
+        }
+        return left;
     }
 
     // See BPlusNode.bulkLoad.
@@ -108,14 +175,55 @@ class InnerNode extends BPlusNode {
             float fillFactor) {
         // TODO(proj2): implement
 
-        return Optional.empty();
+        // get bPlusTree order as d
+        int d = this.metadata.getOrder();
+
+        // get the last leafNode
+        BPlusNode node = getChild(children.size()-1);
+        while (node instanceof InnerNode){
+            node = ((InnerNode) node).getChild(((InnerNode) node).getChildren().size()-1);
+        }
+        // whether split happen in putting key into leafNode
+        Optional<Pair<DataBox,Long>> splitInfo = node.bulkLoad(data, fillFactor);
+
+        // if happen split in putting key into leafNode
+        if(splitInfo.isPresent()){
+
+            // add new key & rid into lists
+            keys.add(splitInfo.get().getFirst());
+            children.add(splitInfo.get().getSecond());
+
+            // case1 does not cause overflow
+            if (keys.size()<=2*d){
+                sync();
+                return Optional.empty();
+            }
+
+            // case2 cause overflow
+            int mid = keys.size()/2;
+            List<DataBox> leftKeys = keys.subList(0,mid);
+            List<Long> leftChildren = children.subList(0,mid+1);
+            List<DataBox> rightKeys = keys.subList(mid+1,keys.size());
+            List<Long> rightChildren = children.subList(mid+1,children.size());
+            InnerNode newNode = new InnerNode(metadata,bufferManager,rightKeys,rightChildren,treeContext);
+            DataBox splitKey = keys.get(mid);
+            keys = leftKeys;
+            children = leftChildren;
+            sync();
+            return Optional.of(new Pair<DataBox, Long>(splitKey, newNode.getPage().getPageNum()));
+        }
+        // if do not happen split just return empty val
+        else {
+            return Optional.empty();
+        }
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
         // TODO(proj2): implement
-
+        get(key).remove(key);
+        sync();
         return;
     }
 
