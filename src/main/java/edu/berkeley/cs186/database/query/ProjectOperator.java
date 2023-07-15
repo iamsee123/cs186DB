@@ -8,6 +8,9 @@ import edu.berkeley.cs186.database.table.stats.TableStats;
 
 import java.util.*;
 
+/**
+ * Corresponds to the π operator of relational algebra.
+ */
 public class ProjectOperator extends QueryOperator {
     // A list of column names to use in the output of this operator
     private List<String> outputColumns;
@@ -62,6 +65,7 @@ public class ProjectOperator extends QueryOperator {
         for (String colName: groupByColumns) {
             groupByIndices.add(this.sourceSchema.findField(colName));
         }
+        // 检测是否存在聚合类型的算子，没有直接结束初始化
         boolean hasAgg = false;
         for (int i = 0; i < expressions.size(); i++) {
             hasAgg |= expressions.get(i).hasAgg();
@@ -70,11 +74,16 @@ public class ProjectOperator extends QueryOperator {
 
         for (int i = 0; i < expressions.size(); i++) {
             Set<Integer> dependencyIndices = new HashSet<>();
+            // 根据expression的对应Dependencies的colName得到index
             for (String colName: expressions.get(i).getDependencies()) {
                 dependencyIndices.add(this.sourceSchema.findField(colName));
             }
+            // 当expression没有聚合符号
             if (!expressions.get(i).hasAgg()) {
+                // 去除所有聚合列的index
                 dependencyIndices.removeAll(groupByIndices);
+                // 分组查询里面，要么是聚合函数的结果，要么是 groupby 后面的字段。只有这两种情况可以显示。
+                // 还有剩余则表明，一个不存在聚合算子的表达式中，不在表达式依赖的groupby的列中
                 if (dependencyIndices.size() != 0) {
                     int any = dependencyIndices.iterator().next();
                     throw new UnsupportedOperationException(

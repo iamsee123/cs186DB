@@ -136,6 +136,9 @@ public class BufferManager implements AutoCloseable {
             this.contents = null;
         }
 
+        // 此处使用Frame内部类中的index来作为linkArray的指示
+        // 外部类中的firstFreeIndex用于确定头指针
+        // Frame中的index用于记录原先的头节点，或者说后一个节点
         /**
          * Marks the frame as free.
          */

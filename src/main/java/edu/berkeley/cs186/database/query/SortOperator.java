@@ -3,12 +3,15 @@ package edu.berkeley.cs186.database.query;
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
+import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.query.disk.Run;
 import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.Schema;
+import edu.berkeley.cs186.database.table.Table;
 import edu.berkeley.cs186.database.table.stats.TableStats;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class SortOperator extends QueryOperator {
     protected Comparator<Record> comparator;
@@ -77,17 +80,38 @@ public class SortOperator extends QueryOperator {
         return backtrackingIterator();
     }
 
+    // private int getRecordsNumPerPage(){
+    //     return Table.computeNumRecordsPerPage(
+    //             BufferManager.EFFECTIVE_PAGE_SIZE,
+    //             getSource().getSchema()
+    //     );
+    // }
+
     /**
      * Returns a Run containing records from the input iterator in sorted order.
      * You're free to use an in memory sort over all the records using one of
      * Java's built-in sorting methods.
      *
+     * pass 0 for sort
      * @return a single sorted run containing all the records from the input
      * iterator
      */
     public Run sortRun(Iterator<Record> records) {
         // TODO(proj3_part1): implement
-        return null;
+        Run conquerRun = makeRun();
+        // records contains all input data
+        // list to store tmp input records its max size little than numBuffers*recordsPerPage
+        // int maxSize = getRecordsNumPerPage()*numBuffers;
+        List<Record> tmp = new ArrayList<>();
+
+        while(records.hasNext()){
+            tmp.add(records.next());
+        }
+        if(!tmp.isEmpty()){
+            tmp.sort(this.comparator);
+            conquerRun.addAll(tmp);
+        }
+        return conquerRun;
     }
 
     /**
@@ -108,7 +132,25 @@ public class SortOperator extends QueryOperator {
     public Run mergeSortedRuns(List<Run> runs) {
         assert (runs.size() <= this.numBuffers - 1);
         // TODO(proj3_part1): implement
-        return null;
+        Run sortRun = makeRun();
+
+        PriorityQueue<Pair<Record,Integer>> sortQueue = new PriorityQueue<>(new RecordPairComparator());
+        List<Iterator<Record>> runsIterators = runs.stream().map(Run::iterator).collect(Collectors.toList());
+        for(int i = 0;i<runs.size();i++){
+            Iterator<Record> tmp = runsIterators.get(i);
+            if(tmp.hasNext()){
+                sortQueue.offer(new Pair<>(tmp.next(),i));
+            }
+        }
+        while (!sortQueue.isEmpty()){
+            Pair<Record,Integer> minRecord = sortQueue.poll();
+            sortRun.add(minRecord.getFirst());
+            if(runsIterators.get(minRecord.getSecond()).hasNext()){
+                sortQueue.add(new Pair<>(runsIterators.get(minRecord.getSecond()).next(),minRecord.getSecond()));
+            }
+        }
+
+        return sortRun;
     }
 
     /**
@@ -129,11 +171,29 @@ public class SortOperator extends QueryOperator {
      * not a perfect multiple of (numBuffers - 1) the last sorted run should be
      * the result of merging less than (numBuffers - 1) runs.
      *
+     * this method is used to split datas to fit buffer number
+     * for example if we have 5 runs and 3 buffer we should divide it into 3 different list
+     * and as the input of mergeSortedRuns
+     *
      * @return a list of sorted runs obtained by merging the input runs
      */
     public List<Run> mergePass(List<Run> runs) {
         // TODO(proj3_part1): implement
-        return Collections.emptyList();
+        // store divide runs
+        List<Run> divideRuns = new ArrayList<>();
+        // store results
+        List<Run> results = new ArrayList<>();
+        for (Run run : runs) {
+            if (divideRuns.size() == this.numBuffers - 1) {
+                results.add(mergeSortedRuns(divideRuns));
+                divideRuns.clear();
+            }
+            divideRuns.add(run);
+        }
+        if(!divideRuns.isEmpty()){
+            results.add(mergeSortedRuns(divideRuns));
+        }
+        return results;
     }
 
     /**
@@ -149,7 +209,19 @@ public class SortOperator extends QueryOperator {
         Iterator<Record> sourceIterator = getSource().iterator();
 
         // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        // sort run pass 0
+        List<Run> runs = new ArrayList<>();
+        while(sourceIterator.hasNext()){
+            BacktrackingIterator<Record> blockIterator = getBlockIterator(sourceIterator,computeSchema(),numBuffers);
+            runs.add(sortRun(blockIterator));
+        }
+
+        //merge pass 1...n
+        while(runs.size()!=1){
+            runs = mergePass(runs);
+        }
+
+        return runs.get(0); // TODO(proj3_part1): replace this!
     }
 
     /**

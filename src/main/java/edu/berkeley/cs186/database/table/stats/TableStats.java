@@ -80,6 +80,7 @@ public class TableStats {
         numRecords = Math.max(numRecords - 1, 0);
     }
 
+    // 更像重新创建了全新的直方图，而不是在原始的直方图上进行数据的更新
     public void refreshHistograms(int buckets, Table table) {
         List<Histogram> newHistograms = new ArrayList<>();
         int totalRecords = 0;
@@ -160,9 +161,11 @@ public class TableStats {
         for (int j = 0; j < histograms.size(); j++) {
             Histogram histogram = histograms.get(j);
             if (column == j) {
+                // 对每一个bucket都按照不同的比例调整
                 // For the target column, apply the predicate directly
                 copyHistograms.add(histogram.copyWithPredicate(predicate, d));
             } else {
+                // 按照计算得到的reductionFactor统一调整
                 // For other columns, reduce by the reduction factor
                 copyHistograms.add(histogram.copyWithReduction(reductionFactor));
             }

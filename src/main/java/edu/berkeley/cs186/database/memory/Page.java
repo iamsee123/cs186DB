@@ -9,6 +9,7 @@ import edu.berkeley.cs186.database.concurrency.LockUtil;
 import edu.berkeley.cs186.database.io.PageException;
 
 /**
+ * 根据图来看，page是disk中对于数据组织块的抽象，frame则是在内存中对数据组织块的抽象
  * Represents a page loaded in memory (as opposed to the buffer frame it's in). Wraps
  * around buffer manager frames, and requests the page be loaded into memory as necessary.
  */
@@ -120,6 +121,7 @@ public class Page {
 
     /**
      * Completely wipe (zero out) the page.
+     * 置零
      */
     public void wipe() {
         byte[] zeros = new byte[BufferManager.EFFECTIVE_PAGE_SIZE];
@@ -225,6 +227,7 @@ public class Page {
         public Buffer put(byte[] src, int offset, int length) {
             // TODO(proj4_part2): Update the following line
             LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
+            // 规定使用外部类的this实例对象
             Page.this.writeBytes(this.offset + offset, length, src);
             return this;
         }

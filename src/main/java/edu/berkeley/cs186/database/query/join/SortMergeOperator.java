@@ -140,7 +140,45 @@ public class SortMergeOperator extends JoinOperator {
          */
         private Record fetchNextRecord() {
             // TODO(proj3_part1): implement
-            return null;
+            do {
+                if(!marked){
+                    while(leftIterator.hasNext() && compare(leftRecord,rightRecord)<0){
+                        leftRecord = leftIterator.next();
+                    }
+                    while(rightIterator.hasNext() && compare(leftRecord,rightRecord)>0){
+                        rightRecord = rightIterator.next();
+                    }
+                    rightIterator.markPrev();
+                    marked = true;
+                }
+                if(leftRecord != null && rightRecord != null && compare(leftRecord,rightRecord)==0){
+                    Record ans = leftRecord.concat(rightRecord);
+                    if(rightIterator.hasNext()){
+                        rightRecord = rightIterator.next();
+                    }else {
+                        rightIterator.reset();
+                        rightRecord = rightIterator.next();
+                        if(leftIterator.hasNext()){
+                            leftRecord = leftIterator.next();
+                        }else {
+                            leftRecord = null;
+                            return ans;
+                        }
+                        marked = false;
+                    }
+                    return ans;
+                }else {
+                    rightIterator.reset();
+                    rightRecord = rightIterator.next();
+                    if(leftIterator.hasNext()){
+                        leftRecord = leftIterator.next();
+                    }else {
+                        leftRecord = null;
+                        return null;
+                    }
+                    marked = false;
+                }
+            }while (true);
         }
 
         @Override

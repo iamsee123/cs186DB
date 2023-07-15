@@ -473,7 +473,7 @@ public class ExtraSMJTests {
             }
             String report = problems.toString();
             if (!report.equals("")) {
-                throw new RuntimeException("\n" + report);
+                 throw new RuntimeException("\n" + report);
             }
         }
     }

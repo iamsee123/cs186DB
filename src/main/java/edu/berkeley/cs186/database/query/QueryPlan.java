@@ -577,6 +577,32 @@ public class QueryPlan {
         QueryOperator minOp = new SequentialScanOperator(this.transaction, table);
 
         // TODO(proj3_part2): implement
+        // calculate basic cost of query, using sequentialScanOperator
+        int curCost = minOp.estimateIOCost();
+        // if final op is indexScan we use this
+        int indexForScan = -1;
+        // get table index which can be used to do further scan
+        List<Integer> indexesToScan = this.getEligibleIndexColumns(table);
+
+        for(int index:indexesToScan){
+            // form index scan
+            QueryOperator tmp = new IndexScanOperator(this.transaction,
+                    table,
+                    this.selectPredicates.get(index).column,
+                    this.selectPredicates.get(index).operator,
+                    this.selectPredicates.get(index).value);
+            // calculate cost
+            int tmpCost = tmp.estimateIOCost();
+            if(tmpCost < curCost){
+                curCost = tmpCost;
+                minOp = tmp;
+                indexForScan = index;
+            }
+        }
+
+        // If an index scan was chosen, exclude the redundant select predicate when pushing down selects.
+        minOp = this.addEligibleSelections(minOp,indexForScan);
+
         return minOp;
     }
 
@@ -646,6 +672,63 @@ public class QueryPlan {
         //      calculate the cheapest join with the new table (the one you
         //      fetched an operator for from pass1Map) and the previously joined
         //      tables. Then, update the result map if needed.
+
+        for(Set<String> prevSet: prevMap.keySet()){
+            for(JoinPredicate joinPredicate : this.joinPredicates){
+                String leftTableName = joinPredicate.leftTable;
+                String leftColumn = joinPredicate.leftColumn;
+                String rightTableName = joinPredicate.rightTable;
+                String rightColumn = joinPredicate.rightColumn;
+                QueryOperator leftOperator = null;
+                QueryOperator rightOperator = null;
+                // join table names
+                Set<String> joinedTables = new HashSet<>(prevSet);
+                QueryOperator bestOp = null;
+                // case 1
+                if(prevSet.contains(leftTableName) && !prevSet.contains(rightTableName)){
+                    leftOperator = prevMap.get(prevSet);
+                    rightOperator = pass1Map.get(new HashSet<String>(){{
+                        add(rightTableName);
+                    }});
+                    joinedTables.add(rightTableName);
+                    if(prevSet.size()==1){
+                        QueryOperator bestOp1 = minCostJoinType(leftOperator,rightOperator,leftColumn,rightColumn);
+                        QueryOperator bestOp2 = minCostJoinType(rightOperator,leftOperator,rightColumn,leftColumn);
+                        bestOp = bestOp1.estimateIOCost()> bestOp2.estimateIOCost()?bestOp2:bestOp1;
+                    }else {
+                        bestOp = minCostJoinType(leftOperator,rightOperator,leftColumn,rightColumn);
+                    }
+                }
+                // case 2
+                else if (!prevSet.contains(leftTableName) && prevSet.contains(rightTableName)) {
+                    leftOperator = pass1Map.get(new HashSet<String>(){
+                        {
+                            add(leftTableName);
+                        }
+                    });
+                    rightOperator = prevMap.get(prevSet);
+                    joinedTables.add(leftTableName);
+                    if(prevSet.size()==1){
+                        QueryOperator bestOp1 = minCostJoinType(leftOperator,rightOperator,leftColumn,rightColumn);
+                        QueryOperator bestOp2 = minCostJoinType(rightOperator,leftOperator,rightColumn,leftColumn);
+                        bestOp = bestOp1.estimateIOCost()> bestOp2.estimateIOCost()?bestOp2:bestOp1;
+                    }else {
+                        bestOp = minCostJoinType(rightOperator,leftOperator,rightColumn,leftColumn);
+                    }
+                }else {
+                    continue;
+                }
+                if(!result.containsKey(joinedTables)){
+                    result.put(joinedTables,bestOp);
+                }else {
+                    QueryOperator oldOp = result.get(joinedTables);
+                    if(oldOp.estimateIOCost()> bestOp.estimateIOCost()){
+                        result.put(joinedTables,bestOp);
+                    }
+                }
+            }
+        }
+
         return result;
     }
 
@@ -695,7 +778,62 @@ public class QueryPlan {
         // Set the final operator to the lowest cost operator from the last
         // pass, add group by, project, sort and limit operators, and return an
         // iterator over the final operator.
-        return this.executeNaive(); // TODO(proj3_part2): Replace this!
+
+        Map<Set<String>,QueryOperator> pass1Map = new HashMap<>();
+        // pass 1
+        for(String tableName:this.tableNames){
+            QueryOperator minOp = minCostSingleAccess(tableName);
+            pass1Map.put(new HashSet<String>(){{
+                add(tableName);
+            }},minOp);
+        }
+
+        Map<Set<String>,QueryOperator> prevMap = new HashMap<>(pass1Map);
+        int joinTableSize = countJoinedTables();
+
+        // pass n
+        while(joinTableSize != 0 && !isAllJoined(prevMap,joinTableSize)){
+            prevMap = minCostJoins(prevMap,pass1Map);
+        }
+
+        // last pass
+        this.finalOperator = minCostOperator(prevMap);
+
+        // add group by, project, sort and limit operators
+        // order is important
+        // add groupby
+        this.addGroupBy();
+        // add project
+        this.addProject();
+        // add sort
+        this.addSort();
+        // add select
+        this.addLimit();
+
+        return this.finalOperator.iterator(); // TODO(proj3_part2): Replace this!
+    }
+
+    /**
+     * count join table numbers
+     * @return
+     */
+    private int countJoinedTables(){
+        Set<String> joinTables = new HashSet<>();
+        for(JoinPredicate joinPredicate:this.joinPredicates){
+            joinTables.add(joinPredicate.leftTable);
+            joinTables.add(joinPredicate.rightTable);
+        }
+        return joinTables.size();
+    }
+
+    /**
+     * used to judge whether all table need to be join has been joined
+     * @param prevMap
+     * @return
+     */
+    private boolean isAllJoined(Map<Set<String>,QueryOperator> prevMap,int joinedTablesNum){
+        Set<String> joinedSet = prevMap.keySet().iterator().next();
+        return joinedSet.size() == joinedTablesNum;
     }
 
     // EXECUTE NAIVE ///////////////////////////////////////////////////////////

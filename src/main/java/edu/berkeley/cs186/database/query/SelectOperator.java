@@ -9,6 +9,9 @@ import edu.berkeley.cs186.database.table.stats.TableStats;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
+/**
+ *  Corresponds to the σ operator of relational algebra.
+ */
 public class SelectOperator extends QueryOperator {
     private int columnIndex;
     private String columnName;
