@@ -12,6 +12,54 @@ public enum LockType {
     NL;  // no lock held
 
     /**
+     * according the LockType sequence
+     * give the compatible matrix
+     * each index is the original enum type index
+     * row seq: S,X,IS,IX,SIX,NL
+     * col seq: S,X,IS,IX,SIX,NL
+     */
+    private static boolean[][] compatibleMatrix = {
+            {true, false, true, false, false, true},
+            {false, false, false, false, false, true},
+            {true, false, true, true, true, true},
+            {false, false, true, true, false, true},
+            {false, false, true, false, false, true},
+            {true, true, true, true, true, true}
+    };
+
+    /**
+     * according the LockType sequence
+     * give the parent matrix
+     * each index is the original enum type index
+     * row seq: S,X,IS,IX,SIX,NL
+     * col seq: S,X,IS,IX,SIX,NL
+     */
+    private static boolean[][] parentMatrix = {
+            {false, false, false, false, false, true},
+            {false, false, false, false, false, true},
+            {true, false, true, false, false, true},
+            {true, true, true, true, true, true},
+            {false, true, false, true, false, true},
+            {false, false, false, false, false, true}
+    };
+
+    /**
+     * according the LockType sequence
+     * give the substitutability matrix
+     * each index is the original enum type index
+     * row seq: S,X,IS,IX,SIX,NL
+     * col seq: S,X,IS,IX,SIX,NL
+     */
+    private static boolean[][] substitutabilityMatrix = {
+            {true, false, true, false, false, true},
+            {true, true, true, true, true, true},
+            {false, false, true, false, false, true},
+            {false, false, true, true, false, true},
+            {true, false, true, true, true, true},
+            {false, false, false, false, false, true}
+    };
+
+    /**
      * This method checks whether lock types A and B are compatible with
      * each other. If a transaction can hold lock type A on a resource
      * at the same time another transaction holds lock type B on the same
@@ -22,8 +70,9 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
-        return false;
+        int x = a.ordinal();
+        int y = b.ordinal();
+        return compatibleMatrix[x][y];
     }
 
     /**
@@ -54,8 +103,9 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
-        return false;
+        int x = parentLockType.ordinal();
+        int y = childLockType.ordinal();
+        return parentMatrix[x][y];
     }
 
     /**
@@ -63,14 +113,16 @@ public enum LockType {
      * requiring another lock (e.g. an S lock can be substituted with
      * an X lock, because an X lock allows the transaction to do everything
      * the S lock allowed it to do).
+     * means using substitute lockType can cover all situations of required lockType
      */
     public static boolean substitutable(LockType substitute, LockType required) {
         if (required == null || substitute == null) {
             throw new NullPointerException("null lock type");
         }
         // TODO(proj4_part1): implement
-
-        return false;
+        int x = substitute.ordinal();
+        int y = required.ordinal();
+        return substitutabilityMatrix[x][y];
     }
 
     /**

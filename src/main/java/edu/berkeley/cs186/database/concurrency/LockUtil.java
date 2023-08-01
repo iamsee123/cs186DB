@@ -2,6 +2,8 @@ package edu.berkeley.cs186.database.concurrency;
 
 import edu.berkeley.cs186.database.TransactionContext;
 
+import java.util.Objects;
+
 /**
  * LockUtil is a declarative layer which simplifies multigranularity lock
  * acquisition for the user (you, in the last task of Part 2). Generally
@@ -42,8 +44,69 @@ public class LockUtil {
         LockType explicitLockType = lockContext.getExplicitLockType(transaction);
 
         // TODO(proj4_part2): implement
-        return;
+        // the current lock type can effectively substitute the requested type
+        if(LockType.substitutable(effectiveLockType,requestType)){
+            return;
+        }
+
+        // The current lock type is IX and the requested lock is S
+        if(Objects.equals(LockType.IX,explicitLockType) && Objects.equals(LockType.S,requestType)){
+            lockContext.promote(transaction,LockType.SIX);
+            return;
+        }
+
+        // The current lock type is an intent lock
+        if(explicitLockType.isIntent()){
+            lockContext.escalate(transaction);
+            explicitLockType = lockContext.getExplicitLockType(transaction);
+            if(Objects.equals(explicitLockType,requestType) || Objects.equals(explicitLockType,LockType.X)){
+                return;
+            }
+        }
+
+        // remain NL->S NL->X S->X
+        if (Objects.equals(requestType, LockType.S)) {
+            //NL -> S
+            enforceLock(transaction, parentContext, LockType.IS);
+        } else {
+            //NL -> X || S -> X
+            enforceLock(transaction, parentContext, LockType.IX);
+        }
+        if (Objects.equals(explicitLockType, LockType.NL)) {
+            //NL -> S || NL -> X
+            lockContext.acquire(transaction, requestType);
+        } else {
+            //S -> X
+            lockContext.promote(transaction, requestType);
+        }
     }
 
     // TODO(proj4_part2) add any helper methods you want
+
+    /**
+     * update parent Lock Type
+     * @param transactionContext
+     * @param lockContext
+     * @param required
+     */
+    private static void enforceLock(TransactionContext transactionContext, LockContext lockContext, LockType required){
+
+        assert(Objects.equals(required,LockType.IS) || Objects.equals(required,LockType.IX));
+
+        if(null == lockContext){
+            return;
+        }
+
+        enforceLock(transactionContext,lockContext.parentContext(),required);
+
+        LockType type = lockContext.getExplicitLockType(transactionContext);
+
+        if(!LockType.substitutable(type,required)){
+            if(Objects.equals(LockType.NL,type)){
+                lockContext.acquire(transactionContext,required);
+            }else {
+                lockContext.promote(transactionContext,required);
+            }
+        }
+    }
 }

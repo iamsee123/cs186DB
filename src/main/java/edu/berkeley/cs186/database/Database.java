@@ -26,6 +26,7 @@ import edu.berkeley.cs186.database.recovery.ARIESRecoveryManager;
 import edu.berkeley.cs186.database.recovery.DummyRecoveryManager;
 import edu.berkeley.cs186.database.recovery.RecoveryManager;
 import edu.berkeley.cs186.database.table.*;
+import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.stats.TableStats;
 
 import java.io.*;
@@ -931,6 +932,11 @@ public class Database implements AutoCloseable {
         public void close() {
             try {
                 // TODO(proj4_part2)
+                List<Lock> locks = lockManager.getLocks(this);
+                Collections.reverse(locks);
+                for(Lock lock:locks){
+                    LockContext.fromResourceName(lockManager,lock.name).release(this);
+                }
                 return;
             } catch (Exception e) {
                 // There's a chance an error message from your release phase
